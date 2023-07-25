@@ -271,10 +271,21 @@ float rand_float(float LO, float HI) {
     return LO + static_cast <float> (rand()) / (static_cast <float> (RAND_MAX / (HI - LO)));
 }
 
-void pyflex_set_scene(int scene_idx, py::array_t<float> scene_params, int thread_idx = 0) {
+void pyflex_set_scene(
+    int scene_idx,
+    py::array_t<float> scene_params,
+    py::array_t<float> vertices,
+    py::array_t<int> stretch_edges,
+    py::array_t<int> bend_edges,
+    py::array_t<int> shear_edges,
+    py::array_t<int> faces,
+    int thread_idx = 0)
+{
     g_scene = scene_idx;
     g_selectedScene = g_scene;
-    Init(g_selectedScene, scene_params, true, thread_idx);
+    Init(g_selectedScene, scene_params, vertices,
+         stretch_edges, bend_edges, shear_edges, faces,
+         true, thread_idx);
 }
 
 void pyflex_MapShapeBuffers(SimBuffers *buffers) {
@@ -1120,7 +1131,15 @@ PYBIND11_MODULE(pyflex, m) {
     m.def("main", &main);
 
     m.def("init", &pyflex_init);
-    m.def("set_scene", &pyflex_set_scene);
+    m.def("set_scene", &pyflex_set_scene,
+          py::arg("scene_idx") = 0,
+          py::arg("scene_params") = py::array_t<float>(),
+          py::arg("vertices") = py::array_t<float>(),
+          py::arg("stretch_edges") = py::array_t<int>(),
+          py::arg("bend_edges") = py::array_t<int>(),
+          py::arg("shear_edges") = py::array_t<int>(),
+          py::arg("faces") = py::array_t<int>(),
+          py::arg("thread_idx") = 0);
     m.def("clean", &pyflex_clean);
     m.def("step", &pyflex_step,
           py::arg("update_params") = nullptr,

@@ -591,7 +591,15 @@ inline float sqr(float x) { return x * x; }
 #include <iostream>
 using namespace std;
 
-void Init(int scene, py::array_t<float> scene_params, bool centerCamera = true, int thread_idx = 0) {
+void Init(int scene,
+          py::array_t<float> scene_params,
+          py::array_t<float> vertices,
+          py::array_t<int> stretch_edges,
+          py::array_t<int> bend_edges,
+          py::array_t<int> shear_edges,
+          py::array_t<int> faces,
+          bool centerCamera = true, int thread_idx = 0)
+{
     RandInit();
     if (g_solver) {
         if (g_buffers)
@@ -805,9 +813,10 @@ void Init(int scene, py::array_t<float> scene_params, bool centerCamera = true, 
 
     // create scene
     StartGpuWork();
-    // printf("Gpu started. \n");
-//    cout<<thread_idx<<endl;
-    g_scenes[g_scene]->Initialize(scene_params, thread_idx);
+    g_scenes[g_scene]->Initialize(
+        scene_params, vertices,
+        stretch_edges, bend_edges, shear_edges,
+        faces, thread_idx);
     EndGpuWork();
 
     uint32_t numParticles = g_buffers->positions.size();
