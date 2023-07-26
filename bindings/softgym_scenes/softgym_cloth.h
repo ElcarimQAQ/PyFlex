@@ -53,28 +53,87 @@ public:
         cam_width = int(ptr[15]);
         cam_height = int(ptr[16]);
 
-        // Cloth
-        float stretchStiffness = ptr[5]; //0.9f;
-		float bendStiffness = ptr[6]; //1.0f;
-		float shearStiffness = ptr[7]; //0.9f;
-		int phase = NvFlexMakePhase(0, eNvFlexPhaseSelfCollide | eNvFlexPhaseSelfCollideFilter);
-		float mass = float(ptr[17])/(dimx*dimz);	// avg bath towel is 500-700g
+        float stretchStiffness = ptr[5];
+        float bendStiffness = ptr[6];
+        float shearStiffness = ptr[7];
+        int phase = NvFlexMakePhase(0, eNvFlexPhaseSelfCollide | eNvFlexPhaseSelfCollideFilter);
+
         int flip_mesh = int(ptr[18]); // Flip half
+
+        // Cloth
+        auto verts_buf = vertices.request();
+        size_t num_verts = verts_buf.shape[0] / 3;
+        if (num_verts > 0)
+        {
+            // If a mesh is passed, then use passed in mesh
+            float mass = float(ptr[17]) / num_verts;
+            float invMass = 1.0f / mass;
+            auto lower = Vec4(initX, -initY, initZ, 0);
+            int baseIndex = int(g_buffers->positions.size());
+            Vec3 velocity = Vec3(0, 0, 0);
+
+            auto verts_ptr = (float *)verts_buf.ptr;
+            for (size_t idx = 0; idx < num_verts; idx++)
+            {
+                g_buffers->positions.push_back(
+                    Vec4(verts_ptr[3 * idx], verts_ptr[3 * idx + 1], verts_ptr[3 * idx + 2], invMass) + lower);
+                g_buffers->velocities.push_back(velocity);
+                g_buffers->phases.push_back(phase);
+            }
+
+            auto faces_buf = faces.request();
+            auto faces_ptr = (int *)faces_buf.ptr;
+            size_t num_faces = int(faces_buf.shape[0] / 3);
+            for (size_t idx = 0; idx < num_faces; idx++)
+            {
+                g_buffers->triangles.push_back(baseIndex + faces_ptr[3 * idx]);
+                g_buffers->triangles.push_back(baseIndex + faces_ptr[3 * idx + 1]);
+                g_buffers->triangles.push_back(baseIndex + faces_ptr[3 * idx + 2]);
+                auto p1 = g_buffers->positions[baseIndex + faces_ptr[3 * idx]];
+                auto p2 = g_buffers->positions[baseIndex + faces_ptr[3 * idx + 1]];
+                auto p3 = g_buffers->positions[baseIndex + faces_ptr[3 * idx + 2]];
+                auto U = p2 - p1;
+                auto V = p3 - p1;
+                auto normal = Vec3(
+                    U.y * V.z - U.z * V.y,
+                    U.z * V.x - U.x * V.z,
+                    U.x * V.y - U.y * V.x);
+                g_buffers->triangleNormals.push_back(normal / Length(normal));
+            }
+
+            auto stretch_edges_buf = stretch_edges.request();
+            auto stretch_edges_ptr = (int *)stretch_edges_buf.ptr;
+            size_t num_stretch_edges = int(stretch_edges_buf.shape[0] / 2);
+            for (size_t idx = 0; idx < num_stretch_edges; idx++)
+            {
+                CreateSpring(baseIndex + stretch_edges_ptr[2 * idx], baseIndex + stretch_edges_ptr[2 * idx + 1], stretchStiffness);
+            }
+
+            auto bend_edges_buf = bend_edges.request();
+            auto bend_edges_ptr = (int *)bend_edges_buf.ptr;
+            size_t num_bend_edges = int(bend_edges_buf.shape[0] / 2);
+            for (size_t idx = 0; idx < num_bend_edges; idx++)
+            {
+                CreateSpring(baseIndex + bend_edges_ptr[2 * idx], baseIndex + bend_edges_ptr[2 * idx + 1], bendStiffness);
+            }
+
+            auto shear_edges_buf = shear_edges.request();
+            auto shear_edges_ptr = (int *)shear_edges_buf.ptr;
+            size_t num_shear_edges = int(shear_edges_buf.shape[0] / 2);
+            for (size_t idx = 0; idx < num_shear_edges; idx++)
+            {
+                CreateSpring(baseIndex + shear_edges_ptr[2 * idx], baseIndex + shear_edges_ptr[2 * idx + 1], shearStiffness);
+            }
+        }
+        else
+        {
+		float mass = float(ptr[17])/(dimx*dimz);	// avg bath towel is 500-700g
 	    CreateSpringGrid(Vec3(initX, -initY, initZ), dimx, dimz, 1, radius, phase, stretchStiffness, bendStiffness, shearStiffness, 0.0f, 1.0f/mass);
+        }
 	    // Flip the last half of the mesh for the folding task
 	    if (flip_mesh)
 	    {
 	        int size = g_buffers->triangles.size();
-//	        for (int j=int((dimz-1)*3/8); j<int((dimz-1)*5/8); ++j)
-//	            for (int i=int((dimx-1)*1/8); i<int((dimx-1)*3/8); ++i)
-//	            {
-//	                int idx = j *(dimx-1) + i;
-//
-//	                if ((i!=int((dimx-1)*3/8-1)) && (j!=int((dimz-1)*3/8)))
-//	                    swap(g_buffers->triangles[idx* 3 * 2], g_buffers->triangles[idx*3*2+1]);
-//	                if ((i != int((dimx-1)*1/8)) && (j!=int((dimz-1)*5/8)-1))
-//	                    swap(g_buffers->triangles[idx* 3 * 2 +3], g_buffers->triangles[idx*3*2+4]);
-//                }
 	        for (int j=0; j<int((dimz-1)); ++j)
 	            for (int i=int((dimx-1)*1/8); i<int((dimx-1)*1/8)+5; ++i)
 	            {
