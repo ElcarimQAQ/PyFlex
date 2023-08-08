@@ -87,6 +87,12 @@ void PresentFrame(bool fullSync) { s_context->presentFrame(fullSync); }
 void FlushGraphicsAndWait() { s_context->flushGraphicsAndWait(); }
 
 void ReadFrame(int *backbuffer, int width, int height) { s_context->readFrame(backbuffer, width, height); }
+void ReadFrame(float *backbuffer_red, float *backbuffer_green, float *backbuffer_blue, int width, int height)
+{
+	s_context->readFrame(backbuffer_red, backbuffer_green, backbuffer_blue, width, height);
+}
+
+void ReadDepth(float *backbuffer, int width, int height) { s_context->readDepth(backbuffer, width, height); }
 
 void GetViewRay(int x, int y, Vec3 &origin, Vec3 &dir) { return s_context->getViewRay(x, y, origin, dir); }
 
@@ -128,9 +134,9 @@ void UnbindSolidShader() { s_context->unbindSolidShader(); }
 
 void DrawMesh(const Mesh *m, Vec3 color) { s_context->drawMesh(m, color); }
 
-void DrawCloth(const Vec4 *positions, const Vec4 *normals, const float *uvs, const int *indices, int numTris, int numPositions, int colorIndex, float expand, bool twosided, bool smooth)
+void DrawCloth(const Vec4 *positions, const Vec4 *normals, const Vec3 *uvs, const int *indices, int numTris, int numPositions, int colorIndex, float expand, bool renderUV)
 {
-	s_context->drawCloth(positions, normals, uvs, indices, numTris, numPositions, colorIndex, expand, twosided, smooth);
+	s_context->drawCloth(positions, normals, uvs, indices, numTris, numPositions, colorIndex, expand, renderUV);
 }
 
 void DrawRope(Vec4 *positions, int *indices, int numIndices, float radius, int color)

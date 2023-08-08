@@ -46,7 +46,7 @@ struct RenderInitOptions
 	RenderInitOptions() : defaultFontHeight(-1),
 						  asyncComputeBenchmark(false),
 						  fullscreen(false),
-						  numMsaaSamples(0),
+						  numMsaaSamples(1),
 						  window(nullptr)
 	{
 	}
@@ -76,6 +76,8 @@ void GetViewRay(int x, int y, Vec3 &origin, Vec3 &dir);
 
 // read back pixel values
 void ReadFrame(int *backbuffer, int width, int height);
+void ReadFrame(float *backbuffer_red, float *backbuffer_green, float *backbuffer_blue, int width, int height);
+void ReadDepth(float *backbuffer, int width, int height);
 
 void SetView(Matrix44 view, Matrix44 proj);
 void SetFillMode(bool wireframe);
@@ -138,7 +140,7 @@ void DrawRenderMeshInstances(RenderMesh *m, const Matrix44 *xforms, int n, const
 void DrawPlanes(Vec4 *planes, int n, float bias);
 void DrawPoints(FluidRenderBuffers *buffer, int n, int offset, float radius, float screenWidth, float screenAspect, float fov, Vec3 lightPos, Vec3 lightTarget, Matrix44 lightTransform, ShadowMap *shadowTex, bool showDensity);
 void DrawMesh(const Mesh *, Vec3 color);
-void DrawCloth(const Vec4 *positions, const Vec4 *normals, const float *uvs, const int *indices, int numTris, int numPositions, int colorIndex = 3, float expand = 0.0f, bool twosided = true, bool smooth = true);
+void DrawCloth(const Vec4 *positions, const Vec4 *normals, const Vec3 *uvs, const int *indices, int numTris, int numPositions, int colorIndex = 3, float expand = 0.0f, bool renderUV = false);
 void DrawBuffer(float *buffer, Vec3 camPos, Vec3 lightPos);
 void DrawRope(Vec4 *positions, int *indices, int numIndices, float radius, int color);
 

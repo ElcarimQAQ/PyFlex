@@ -134,7 +134,7 @@ using namespace std;
 
 int g_screenWidth = 720;
 int g_screenHeight = 720;
-int g_msaaSamples = 0;
+int g_msaaSamples = 8;
 
 int g_numSubsteps;
 
@@ -471,7 +471,8 @@ Vec3 g_camSmoothVel(0.0f);
 float g_camSpeed;
 float g_camNear;
 float g_camFar;
-float fov = kPi * 39.5978f / 180.0f;
+
+float fov = kPi / 4.0f;
 
 Vec3 g_lightPos;
 Vec3 g_lightDir;
@@ -480,7 +481,7 @@ Vec3 g_lightTarget;
 bool g_pause = false;
 bool g_step = false;
 bool g_showHelp = true;
-bool g_tweakPanel = true;
+bool g_tweakPanel = false;
 bool g_fullscreen = false;
 bool g_wireframe = false;
 bool g_debug = false;
@@ -610,15 +611,9 @@ inline float sqr(float x) { return x * x; }
 #include <iostream>
 using namespace std;
 
-void Init(int scene,
-          py::array_t<float> scene_params,
-          py::array_t<float> vertices,
-          py::array_t<int> stretch_edges,
-          py::array_t<int> bend_edges,
-          py::array_t<int> shear_edges,
-          py::array_t<int> faces,
-          bool centerCamera = true, int thread_idx = 0)
+void Init(int scene, py::dict scene_params)
 {
+    bool centerCamera = false;
     RandInit();
     if (g_solver)
     {
@@ -739,7 +734,7 @@ void Init(int scene,
 
     g_camSpeed = 0.075f;
     g_camNear = 0.01f;
-    g_camFar = 3.0f;
+    g_camFar = 10.0f;
 
     g_pointScale = 1.0f;
     g_ropeScale = 1.0f;
@@ -797,7 +792,7 @@ void Init(int scene,
     g_params.diffuseBallistic = 16;
     g_params.diffuseLifetime = 2.0f;
 
-    g_numSubsteps = 20;
+    g_numSubsteps = 4;
 
     // planes created after particles
     g_params.numPlanes = 1;
@@ -835,10 +830,8 @@ void Init(int scene,
 
     // create scene
     StartGpuWork();
-    g_scenes[g_scene]->Initialize(
-        scene_params, vertices,
-        stretch_edges, bend_edges, shear_edges,
-        faces, thread_idx);
+    //    cout<<thread_idx<<endl;
+    g_scenes[g_scene]->Initialize(scene_params);
     EndGpuWork();
 
     uint32_t numParticles = g_buffers->positions.size();
@@ -961,6 +954,7 @@ void Init(int scene,
     g_buffers->positions.resize(maxParticles);
     g_buffers->velocities.resize(maxParticles);
     g_buffers->phases.resize(maxParticles);
+    g_buffers->uvs.resize(maxParticles);
 
     g_buffers->densities.resize(maxParticles);
     g_buffers->anisotropy1.resize(maxParticles);
@@ -968,7 +962,8 @@ void Init(int scene,
     g_buffers->anisotropy3.resize(maxParticles);
 
     // save rest positions
-    g_buffers->restPositions.resize(g_buffers->positions.size());
+    // g_buffers->restPositions.resize(g_buffers->positions.size());
+    g_buffers->restPositions.resize(maxParticles);
     for (int i = 0; i < g_buffers->positions.size(); ++i)
         g_buffers->restPositions[i] = g_buffers->positions[i];
 
@@ -1130,7 +1125,8 @@ void Reset() {
 void Shutdown()
 {
     // free buffers
-    DestroyBuffers(g_buffers);
+    if (g_buffers)
+        DestroyBuffers(g_buffers);
 
     for (auto &iter : g_meshes)
     {
@@ -1152,9 +1148,10 @@ void Shutdown()
 
     g_fields.clear();
     g_meshes.clear();
-
-    NvFlexDestroySolver(g_solver);
-    NvFlexShutdown(g_flexLib);
+    if (g_solver)
+        NvFlexDestroySolver(g_solver);
+    if (g_flexLib)
+        NvFlexShutdown(g_flexLib);
 }
 
 void UpdateEmitters()
@@ -1336,7 +1333,7 @@ void UpdateScene(py::array_t<float> update_params)
     g_scenes[g_scene]->Update(update_params);
 }
 
-void RenderScene()
+void RenderScene(bool renderUV = false)
 {
     const int numParticles = NvFlexGetActiveCount(g_solver);
     const int numDiffuse = g_buffers->diffuseCount[0];
@@ -1440,82 +1437,44 @@ void RenderScene()
     // radius used for drawing
     float radius = Max(g_params.solidRestDistance, g_params.fluidRestDistance) * 0.5f * g_pointScale;
 
-    //-------------------------------------
-    // shadowing pass
-
-    if (g_meshSkinIndices.size())
-        SkinMesh();
-
-    // create shadow maps
-    ShadowBegin(g_shadowMap);
-
-    SetView(lightView, lightPerspective);
-    SetCullMode(false);
-
-    // give scene a chance to do custom drawing
-    g_scenes[g_scene]->Draw(1);
-
-    if (g_drawMesh)
-        DrawMesh(g_mesh, g_meshColor);
-
-    DrawShapes();
-
-    if (g_drawCloth && g_buffers->triangles.size())
+    if (renderUV)
     {
-        DrawCloth(&g_buffers->positions[0], &g_buffers->normals[0], g_buffers->uvs.size() ? &g_buffers->uvs[0].x : NULL,
-                  &g_buffers->triangles[0], g_buffers->triangles.size() / 3, g_buffers->positions.size(), 3,
-                  g_expandCloth);
-    }
-
-    if (g_drawRopes)
-    {
-        for (size_t i = 0; i < g_ropes.size(); ++i)
-            DrawRope(&g_buffers->positions[0], &g_ropes[i].mIndices[0], g_ropes[i].mIndices.size(),
-                     radius * g_ropeScale, i);
-    }
-
-    int shadowParticles = numParticles;
-    int shadowParticlesOffset = 0;
-
-    if (!g_drawPoints)
-    {
-        shadowParticles = 0;
-
-        if (g_drawEllipsoids)
+        BindSolidShader(
+            g_lightPos,
+            g_lightTarget,
+            lightTransform,
+            g_shadowMap,
+            0.0f,
+            Vec4(g_clearColor, g_fogDistance));
+        SetView(view, proj);
+        SetCullMode(true);
+        if (g_drawCloth && g_buffers->triangles.size())
         {
-            shadowParticles = numParticles - g_numSolidParticles;
-            shadowParticlesOffset = g_numSolidParticles;
+            DrawCloth(&g_buffers->positions[0], &g_buffers->normals[0],
+                      g_buffers->uvs.size() ? &g_buffers->uvs[0] : nullptr,
+                      &g_buffers->triangles[0],
+                      g_buffers->triangles.size() / 3,
+                      g_buffers->positions.size(), 3,
+                      g_expandCloth, true);
         }
+        UnbindSolidShader();
     }
     else
     {
-        int offset = g_drawMesh ? g_numSolidParticles : 0;
+        //-------------------------------------
+        // shadowing pass
 
-        shadowParticles = numParticles - offset;
-        shadowParticlesOffset = offset;
-    }
+        if (g_meshSkinIndices.size())
+            SkinMesh();
 
-    if (g_buffers->activeIndices.size())
-        DrawPoints(g_fluidRenderBuffers, shadowParticles, shadowParticlesOffset, radius, 2048, 1.0f, lightFov,
-                   g_lightPos, g_lightTarget, lightTransform, g_shadowMap, g_drawDensity);
+        // create shadow maps
+        ShadowBegin(g_shadowMap);
 
-    ShadowEnd();
+        SetView(lightView, lightPerspective);
+        SetCullMode(false);
 
-    //----------------
-    // lighting pass
-
-    BindSolidShader(g_lightPos, g_lightTarget, lightTransform, g_shadowMap, 0.0f, Vec4(g_clearColor, g_fogDistance));
-
-    SetView(view, proj);
-    SetCullMode(true);
-
-    // When the benchmark measures async compute, we need a graphics workload that runs for a whole frame.
-    // We do this by rerendering our simple graphics many times.
-    int passes = g_increaseGfxLoadForAsyncComputeTesting ? 50 : 1;
-
-    for (int i = 0; i != passes; i++)
-    {
-        DrawPlanes((Vec4 *)g_params.planes, g_params.numPlanes, g_drawPlaneBias);
+        // give scene a chance to do custom drawing
+        g_scenes[g_scene]->Draw(1);
 
         if (g_drawMesh)
             DrawMesh(g_mesh, g_meshColor);
@@ -1523,58 +1482,122 @@ void RenderScene()
         DrawShapes();
 
         if (g_drawCloth && g_buffers->triangles.size())
+        {
             DrawCloth(&g_buffers->positions[0], &g_buffers->normals[0],
-                      g_buffers->uvs.size() ? &g_buffers->uvs[0].x : nullptr, &g_buffers->triangles[0],
-                      g_buffers->triangles.size() / 3, g_buffers->positions.size(), 3, g_expandCloth);
+                      g_buffers->uvs.size() ? &g_buffers->uvs[0] : NULL,
+                      &g_buffers->triangles[0], g_buffers->triangles.size() / 3, g_buffers->positions.size(), 3,
+                      g_expandCloth);
+        }
 
         if (g_drawRopes)
         {
             for (size_t i = 0; i < g_ropes.size(); ++i)
                 DrawRope(&g_buffers->positions[0], &g_ropes[i].mIndices[0], g_ropes[i].mIndices.size(),
-                         g_params.radius * 0.5f * g_ropeScale, i);
+                         radius * g_ropeScale, i);
         }
 
-        // give scene a chance to do custom drawing
-        g_scenes[g_scene]->Draw(0);
-    }
-    UnbindSolidShader();
+        int shadowParticles = numParticles;
+        int shadowParticlesOffset = 0;
 
-    // first pass of diffuse particles (behind fluid surface)
-    if (g_drawDiffuse)
-        RenderDiffuse(g_fluidRenderer, g_diffuseRenderBuffers, numDiffuse, radius * g_diffuseScale,
-                      float(g_screenWidth), aspect, fov, g_diffuseColor, g_lightPos, g_lightTarget, lightTransform,
-                      g_shadowMap, g_diffuseMotionScale, g_diffuseInscatter, g_diffuseOutscatter, g_diffuseShadow,
-                      false);
+        if (!g_drawPoints)
+        {
+            shadowParticles = 0;
 
-    if (g_drawEllipsoids)
-    {
-        // draw solid particles separately
-        if (g_numSolidParticles && g_drawPoints)
-            DrawPoints(g_fluidRenderBuffers, g_numSolidParticles, 0, radius, float(g_screenWidth), aspect, fov,
+            if (g_drawEllipsoids)
+            {
+                shadowParticles = numParticles - g_numSolidParticles;
+                shadowParticlesOffset = g_numSolidParticles;
+            }
+        }
+        else
+        {
+            int offset = g_drawMesh ? g_numSolidParticles : 0;
+
+            shadowParticles = numParticles - offset;
+            shadowParticlesOffset = offset;
+        }
+
+        if (g_buffers->activeIndices.size())
+            DrawPoints(g_fluidRenderBuffers, shadowParticles, shadowParticlesOffset, radius, 2048, 1.0f, lightFov,
                        g_lightPos, g_lightTarget, lightTransform, g_shadowMap, g_drawDensity);
 
-        // render fluid surface
-        RenderEllipsoids(g_fluidRenderer, g_fluidRenderBuffers, numParticles - g_numSolidParticles, g_numSolidParticles,
-                         radius, float(g_screenWidth), aspect, fov, g_lightPos, g_lightTarget, lightTransform,
-                         g_shadowMap, g_fluidColor, g_blur, g_ior, g_drawOpaque);
+        ShadowEnd();
 
-        // second pass of diffuse particles for particles in front of fluid surface
+        //----------------
+        // lighting pass
+
+        BindSolidShader(g_lightPos, g_lightTarget, lightTransform, g_shadowMap, 0.0f, Vec4(g_clearColor, g_fogDistance));
+
+        SetView(view, proj);
+        SetCullMode(true);
+
+        // When the benchmark measures async compute, we need a graphics workload that runs for a whole frame.
+        // We do this by rerendering our simple graphics many times.
+        int passes = g_increaseGfxLoadForAsyncComputeTesting ? 50 : 1;
+
+        for (int i = 0; i != passes; i++)
+        {
+            DrawPlanes((Vec4 *)g_params.planes, g_params.numPlanes, g_drawPlaneBias);
+
+            if (g_drawMesh)
+                DrawMesh(g_mesh, g_meshColor);
+
+            DrawShapes();
+
+            if (g_drawCloth && g_buffers->triangles.size())
+                DrawCloth(&g_buffers->positions[0], &g_buffers->normals[0],
+                          g_buffers->uvs.size() ? &g_buffers->uvs[0] : nullptr, &g_buffers->triangles[0],
+                          g_buffers->triangles.size() / 3, g_buffers->positions.size(), 3, g_expandCloth, false);
+
+            if (g_drawRopes)
+            {
+                for (size_t i = 0; i < g_ropes.size(); ++i)
+                    DrawRope(&g_buffers->positions[0], &g_ropes[i].mIndices[0], g_ropes[i].mIndices.size(),
+                             g_params.radius * 0.5f * g_ropeScale, i);
+            }
+
+            // give scene a chance to do custom drawing
+            g_scenes[g_scene]->Draw(0);
+        }
+        UnbindSolidShader();
+
+        // first pass of diffuse particles (behind fluid surface)
         if (g_drawDiffuse)
             RenderDiffuse(g_fluidRenderer, g_diffuseRenderBuffers, numDiffuse, radius * g_diffuseScale,
                           float(g_screenWidth), aspect, fov, g_diffuseColor, g_lightPos, g_lightTarget, lightTransform,
                           g_shadowMap, g_diffuseMotionScale, g_diffuseInscatter, g_diffuseOutscatter, g_diffuseShadow,
-                          true);
-    }
-    else
-    {
-        // draw all particles as spheres
-        if (g_drawPoints)
-        {
-            int offset = g_drawMesh ? g_numSolidParticles : 0;
+                          false);
 
-            if (g_buffers->activeIndices.size())
-                DrawPoints(g_fluidRenderBuffers, numParticles - offset, offset, radius, float(g_screenWidth), aspect,
-                           fov, g_lightPos, g_lightTarget, lightTransform, g_shadowMap, g_drawDensity);
+        if (g_drawEllipsoids)
+        {
+            // draw solid particles separately
+            if (g_numSolidParticles && g_drawPoints)
+                DrawPoints(g_fluidRenderBuffers, g_numSolidParticles, 0, radius, float(g_screenWidth), aspect, fov,
+                           g_lightPos, g_lightTarget, lightTransform, g_shadowMap, g_drawDensity);
+
+            // render fluid surface
+            RenderEllipsoids(g_fluidRenderer, g_fluidRenderBuffers, numParticles - g_numSolidParticles, g_numSolidParticles,
+                             radius, float(g_screenWidth), aspect, fov, g_lightPos, g_lightTarget, lightTransform,
+                             g_shadowMap, g_fluidColor, g_blur, g_ior, g_drawOpaque);
+
+            // second pass of diffuse particles for particles in front of fluid surface
+            if (g_drawDiffuse)
+                RenderDiffuse(g_fluidRenderer, g_diffuseRenderBuffers, numDiffuse, radius * g_diffuseScale,
+                              float(g_screenWidth), aspect, fov, g_diffuseColor, g_lightPos, g_lightTarget, lightTransform,
+                              g_shadowMap, g_diffuseMotionScale, g_diffuseInscatter, g_diffuseOutscatter, g_diffuseShadow,
+                              true);
+        }
+        else
+        {
+            // draw all particles as spheres
+            if (g_drawPoints)
+            {
+                int offset = g_drawMesh ? g_numSolidParticles : 0;
+
+                if (g_buffers->activeIndices.size())
+                    DrawPoints(g_fluidRenderBuffers, numParticles - offset, offset, radius, float(g_screenWidth), aspect,
+                               fov, g_lightPos, g_lightTarget, lightTransform, g_shadowMap, g_drawDensity);
+            }
         }
     }
 
@@ -2132,6 +2155,85 @@ void UpdateFrame(py::array_t<float> update_params)
         // do gamepad input polling
         double currentTime = frameBeginTime;
         static double lastJoyTime = currentTime;
+
+        if (g_gamecontroller && currentTime - lastJoyTime > g_dt)
+        {
+            lastJoyTime = currentTime;
+
+            int leftStickX = SDL_GameControllerGetAxis(g_gamecontroller, SDL_CONTROLLER_AXIS_LEFTX);
+            int leftStickY = SDL_GameControllerGetAxis(g_gamecontroller, SDL_CONTROLLER_AXIS_LEFTY);
+            int rightStickX = SDL_GameControllerGetAxis(g_gamecontroller, SDL_CONTROLLER_AXIS_RIGHTX);
+            int rightStickY = SDL_GameControllerGetAxis(g_gamecontroller, SDL_CONTROLLER_AXIS_RIGHTY);
+            int leftTrigger = SDL_GameControllerGetAxis(g_gamecontroller, SDL_CONTROLLER_AXIS_TRIGGERLEFT);
+            int rightTrigger = SDL_GameControllerGetAxis(g_gamecontroller, SDL_CONTROLLER_AXIS_TRIGGERRIGHT);
+
+            Vec2 leftStick(joyAxisFilter(leftStickX, 0), joyAxisFilter(leftStickY, 0));
+            Vec2 rightStick(joyAxisFilter(rightStickX, 1), joyAxisFilter(rightStickY, 1));
+            Vec2 trigger(leftTrigger / 32768.0f, rightTrigger / 32768.0f);
+
+            if (leftStick.x != 0.0f || leftStick.y != 0.0f ||
+                rightStick.x != 0.0f || rightStick.y != 0.0f)
+            {
+                // note constant factor to speed up analog control compared to digital because it is more controllable.
+                g_camVel.z = -4 * g_camSpeed * leftStick.y;
+                g_camVel.x = 4 * g_camSpeed * leftStick.x;
+
+                // cam orientation
+                g_camAngle.x -= rightStick.x * 0.05f;
+                g_camAngle.y -= rightStick.y * 0.05f;
+            }
+
+            // Handle left stick motion
+            static bool bLeftStick = false;
+
+            if ((leftStick.x != 0.0f || leftStick.y != 0.0f) && !bLeftStick)
+            {
+                bLeftStick = true;
+            }
+            else if ((leftStick.x == 0.0f && leftStick.y == 0.0f) && bLeftStick)
+            {
+                bLeftStick = false;
+                g_camVel.z = -4 * g_camSpeed * leftStick.y;
+                g_camVel.x = 4 * g_camSpeed * leftStick.x;
+            }
+
+            // Handle triggers as controller button events
+            void ControllerButtonEvent(SDL_ControllerButtonEvent event);
+
+            static bool bLeftTrigger = false;
+            static bool bRightTrigger = false;
+            SDL_ControllerButtonEvent e;
+
+            if (!bLeftTrigger && trigger.x > 0.0f)
+            {
+                e.type = SDL_CONTROLLERBUTTONDOWN;
+                e.button = SDL_CONTROLLER_BUTTON_LEFT_TRIGGER;
+                ControllerButtonEvent(e);
+                bLeftTrigger = true;
+            }
+            else if (bLeftTrigger && trigger.x == 0.0f)
+            {
+                e.type = SDL_CONTROLLERBUTTONUP;
+                e.button = SDL_CONTROLLER_BUTTON_LEFT_TRIGGER;
+                ControllerButtonEvent(e);
+                bLeftTrigger = false;
+            }
+
+            if (!bRightTrigger && trigger.y > 0.0f)
+            {
+                e.type = SDL_CONTROLLERBUTTONDOWN;
+                e.button = SDL_CONTROLLER_BUTTON_RIGHT_TRIGGER;
+                ControllerButtonEvent(e);
+                bRightTrigger = true;
+            }
+            else if (bRightTrigger && trigger.y == 0.0f)
+            {
+                e.type = SDL_CONTROLLERBUTTONDOWN;
+                e.button = SDL_CONTROLLER_BUTTON_RIGHT_TRIGGER;
+                ControllerButtonEvent(e);
+                bRightTrigger = false;
+            }
+        }
     }
 
     //-------------------------------------------------------------------
@@ -2215,8 +2317,12 @@ void UpdateFrame(py::array_t<float> update_params)
 
     UnmapBuffers(g_buffers);
 
+    // flush out the last frame before freeing up resources in the event of a scene change
+    // this is necessary for d3d12
     if (!g_headless)
     {
+        PresentFrame(g_vsync);
+
         // move mouse particle (must be done here as GetViewRay() uses the GL projection state)
         if (g_mouseParticle != -1)
         {
@@ -2270,6 +2376,8 @@ void UpdateFrame(py::array_t<float> update_params)
     {
         // tick solver
         NvFlexSetParams(g_solver, &g_params);
+
+        g_numSubsteps = 8;
         NvFlexUpdateSolver(g_solver, g_dt, g_numSubsteps, g_profile);
 
         g_frame++;
@@ -2341,13 +2449,6 @@ void UpdateFrame(py::array_t<float> update_params)
 
     if (g_benchmark)
         newScene = BenchmarkUpdate();
-
-    // flush out the last frame before freeing up resources in the event of a scene change
-    // this is necessary for d3d12
-    if (!g_headless)
-    {
-        PresentFrame(g_vsync);
-    }
 
     // if gui or benchmark requested a scene change process it now
     if (newScene != -1)

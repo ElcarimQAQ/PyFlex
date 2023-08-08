@@ -19,11 +19,13 @@ public:
 	virtual void endFrame();
 	virtual void presentFrame(bool fullsync);
 	virtual void readFrame(int *buffer, int width, int height);
+	virtual void readFrame(float *backbuffer_red, float *backbuffer_green, float *backbuffer_blue, int width, int height);
+	virtual void readDepth(float *buffer, int width, int height);
 	virtual void getViewRay(int x, int y, Vec3 &origin, Vec3 &dir);
 	virtual void setView(Matrix44 view, Matrix44 projection);
 	virtual void renderEllipsoids(FluidRenderer *renderer, FluidRenderBuffers *buffers, int n, int offset, float radius, float screenWidth, float screenAspect, float fov, Vec3 lightPos, Vec3 lightTarget, Matrix44 lightTransform, ::ShadowMap *shadowMap, Vec4 color, float blur, float ior, bool debug);
 	virtual void drawMesh(const Mesh *m, Vec3 color);
-	virtual void drawCloth(const Vec4 *positions, const Vec4 *normals, const float *uvs, const int *indices, int numTris, int numPositions, int colorIndex, float expand, bool twosided, bool smooth);
+	virtual void drawCloth(const Vec4 *positions, const Vec4 *normals, const Vec3 *uvs, const int *indices, int numTris, int numPositions, int colorIndex, float expand, bool renderUV);
 	virtual void drawRope(Vec4 *positions, int *indices, int numIndices, float radius, int color);
 	virtual void drawPlane(const Vec4 &p, bool color);
 	virtual void drawPlanes(Vec4 *planes, int n, float bias);

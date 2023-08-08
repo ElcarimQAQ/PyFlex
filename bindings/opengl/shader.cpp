@@ -46,14 +46,15 @@ void glAssert(const char *msg, long line, const char *file)
 	};
 
 	static const glError errors[] =
-	{ {GL_NO_ERROR, "No Error"},
-	  {GL_INVALID_ENUM, "Invalid Enum"},
-	  {GL_INVALID_VALUE, "Invalid Value"},
-	  {GL_INVALID_OPERATION, "Invalid Operation"},
+	{
+		{GL_NO_ERROR, "No Error"},
+		{GL_INVALID_ENUM, "Invalid Enum"},
+		{GL_INVALID_VALUE, "Invalid Value"},
+		{GL_INVALID_OPERATION, "Invalid Operation"},
 #if OGL1
-	  {GL_STACK_OVERFLOW, "Stack Overflow"},
-	  {GL_STACK_UNDERFLOW, "Stack Underflow"},
-	  {GL_OUT_OF_MEMORY, "Out Of Memory"}
+		{GL_STACK_OVERFLOW, "Stack Overflow"},
+		{GL_STACK_UNDERFLOW, "Stack Underflow"},
+		{GL_OUT_OF_MEMORY, "Out Of Memory"}
 #endif
 	};
 
@@ -218,7 +219,8 @@ namespace OGL_Renderer
 		glBegin(GL_QUADS);
 
 		if (color)
-			glColor3fv(Vec3(0.001f, 0.001f, 0.001f));
+			// glColor3fv(p * 0.5f + Vec4(0.5f, 0.5f, 0.5f, 0.5f));
+			glColor3fv(Vec3(0.0f, 0.0f, 0.0f));
 
 		float kSize = 200.0f;
 

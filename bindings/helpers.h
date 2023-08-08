@@ -459,7 +459,7 @@ void AddBox(Vec3 halfEdge = Vec3(2.0f), Vec3 center = Vec3(0.0f), Quat quat = Qu
 	g_buffers->shapeFlags.push_back(shapeFlag);
 }
 
-void PopBox(int num)
+void PopShape(int num)
 {
 	g_buffers->shapePositions.resize(g_buffers->shapePositions.size() - num);
 	g_buffers->shapeRotations.resize(g_buffers->shapeRotations.size() - num);

@@ -26,13 +26,15 @@ public:
 	virtual void presentFrame(bool fullsync) = 0;
 
 	virtual void readFrame(int *backBuffer, int width, int height) {}
+	virtual void readDepth(float *backBuffer, int width, int height) {}
+	virtual void readFrame(float *backbuffer_red, float *backbuffer_green, float *backbuffer_blue, int width, int height) {}
 
 	virtual void getViewRay(int x, int y, Vec3 &origin, Vec3 &dir) = 0;
 	virtual void setView(Matrix44 view, Matrix44 projection) = 0;
 	virtual void renderEllipsoids(FluidRenderer *renderer, FluidRenderBuffers *buffers, int n, int offset, float radius, float screenWidth, float screenAspect, float fov, Vec3 lightPos, Vec3 lightTarget, Matrix44 lightTransform, ::ShadowMap *shadowMap, Vec4 color, float blur, float ior, bool debug) = 0;
 
 	virtual void drawMesh(const Mesh *m, Vec3 color) = 0;
-	virtual void drawCloth(const Vec4 *positions, const Vec4 *normals, const float *uvs, const int *indices, int numTris, int numPositions, int colorIndex, float expand, bool twosided, bool smooth) = 0;
+	virtual void drawCloth(const Vec4 *positions, const Vec4 *normals, const Vec3 *uvs, const int *indices, int numTris, int numPositions, int colorIndex, float expand, bool renderUV = false) = 0;
 	virtual void drawRope(Vec4 *positions, int *indices, int numIndices, float radius, int color) = 0;
 	virtual void drawPlane(const Vec4 &p, bool color) = 0;
 	virtual void drawPlanes(Vec4 *planes, int n, float bias) = 0;
